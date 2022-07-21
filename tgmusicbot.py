@@ -91,7 +91,7 @@ app = Client(
 # - handlers and functions
 main_filter = (
     filters.text
-    & filters.chat(MUSIC_CHATS)
+
     & filters.incoming
     #& ~filters.edited
 )
