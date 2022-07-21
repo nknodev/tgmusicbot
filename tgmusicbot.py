@@ -53,7 +53,7 @@ from PIL import Image
 import ffmpeg
 
 MUSIC_MAX_LENGTH = 10800
-DELAY_DELETE_INFORM = 10
+DELAY_DELETE_INFORM = 20
 TG_THUMB_MAX_LENGTH = 320
 REGEX_SITES = (
     r"^((?:https?:)?\/\/)"
@@ -101,8 +101,12 @@ main_filter = (
 async def ping_pong(_, message):
     await _reply_and_delete_later(message, "pong",
                                   DELAY_DELETE_INFORM)
-
-
+    
+@app.on_message(filters.command(["start", "help"]))
+async def start(client, message):
+    message.reply("<i>👋 Привет! Я Yokai, помогу тебе скачать видео с Youtube или Soundcloud, просто отправь мне ссылку на композицию.</i>", parse_mode=ParseMode.HTML)
+    message.reply("|| Поддержать автора можно в Биткоенах: \n`bc1qcz7uvp9qtf6076dn6d8sfawau8amdjpzz05urp`\n\nВсем котам, которые помогли проекту, спасибо ❤️ ||")
+    
 @app.on_message(main_filter
                 & filters.regex(REGEX_SITES)
                 & ~filters.regex(REGEX_EXCLUDE_URL))
@@ -111,7 +115,7 @@ async def music_downloader(_, message: Message):
 
 
 async def _fetch_and_send_music(message: Message):
-    await message.reply_chat_action(ChatAction.TYPING)
+    await message.reply_chat_action(ChatAction.UPLOAD_DOCUMENT)
     try:
         ydl_opts = {
             'format': 'bestaudio',
@@ -120,24 +124,23 @@ async def _fetch_and_send_music(message: Message):
         }
         ydl = YoutubeDL(ydl_opts)
         info_dict = ydl.extract_info(message.text, download=False)
-        # send a link as a reply to bypass Music category check
         if not message.reply_to_message \
                 and _youtube_video_not_music(info_dict):
-            inform = ("This video is not under Music category, "
-                      "you can resend the link as a reply "
-                      "to force download it")
+            inform = ("Это видео не является музыкальным. "
+                      "Если вы все же хотите его скачать, "
+                      "отправьте сообщение-ответ в течении 20 секунд. В ином же случае, я удалю это сообщение.")
             await _reply_and_delete_later(message, inform,
                                           DELAY_DELETE_INFORM)
             return
         if info_dict['duration'] > MUSIC_MAX_LENGTH:
             readable_max_length = str(timedelta(seconds=MUSIC_MAX_LENGTH))
-            inform = ("This won't be downloaded because its audio length is "
-                      "longer than the limit `{}` which is set by the bot"
+            inform = ("Длина отправленного вами видео превышает "
+                      "допустимую длину - `{}`."
                       .format(readable_max_length))
             await _reply_and_delete_later(message, inform,
                                           DELAY_DELETE_INFORM)
             return
-        d_status = await message.reply_text("Downloading...", quote=True,
+        d_status = await message.reply_text("Скачиваю...\n<i><b>Внимание!</b>Бот скачивает музыку в наилучшем качестве, поэтому музыка может загружаться долго, поэтому просим вам не нервничать.</i>", quote=True,
                                             disable_notification=True)
         ydl.process_info(info_dict)
         audio_file = ydl.prepare_filename(info_dict)
@@ -171,10 +174,9 @@ async def _reply_and_delete_later(message: Message, text: str, delay: int):
 async def _upload_audio(message: Message, info_dict, audio_file):
     basename = audio_file.rsplit(".", 1)[-2]
     if info_dict['ext'] == 'webm':
-        audio_file_opus = basename + ".opus"
-        ffmpeg.input(audio_file).output(audio_file_opus, codec="copy").run()
+        ffmpeg.input(audio_file).output(f"{basename}.mp3", codec="copy").run()
         os.remove(audio_file)
-        audio_file = audio_file_opus
+        audio_file = basename + ".mp3"
     thumbnail_url = info_dict['thumbnail']
     if os.path.isfile(basename + ".jpg"):
         thumbnail_file = basename + ".jpg"
@@ -185,7 +187,7 @@ async def _upload_audio(message: Message, info_dict, audio_file):
     make_squarethumb(thumbnail_file, squarethumb_file)
     webpage_url = info_dict['webpage_url']
     title = info_dict['title']
-    caption = f"<b><a href=\"{webpage_url}\">{title}</a></b>"
+    caption = f"<b>{title}</b>\nОтправлено с помощью @yokaidl_bot"
     duration = int(float(info_dict['duration']))
     performer = info_dict['uploader']
     await message.reply_audio(audio_file,
